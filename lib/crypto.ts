@@ -15,9 +15,10 @@ function bytesToHex(bytes: Uint8Array): string {
 
 async function getKey(): Promise<CryptoKey> {
   const keyBytes = hexToBytes(process.env.CREDENTIAL_ENCRYPTION_KEY!);
+  const keyBuffer = keyBytes.buffer.slice(keyBytes.byteOffset, keyBytes.byteOffset + keyBytes.byteLength) as ArrayBuffer;
   return crypto.subtle.importKey(
     'raw',
-    keyBytes,
+    keyBuffer,
     { name: ALGORITHM, length: KEY_LENGTH },
     false,
     ['encrypt', 'decrypt']
@@ -29,11 +30,10 @@ export async function encrypt(plaintext: string): Promise<string> {
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const encoded = new TextEncoder().encode(plaintext);
   const encrypted = await crypto.subtle.encrypt(
-    { name: ALGORITHM, iv },
+    { name: ALGORITHM, iv: iv as unknown as BufferSource },
     key,
-    encoded
+    encoded as unknown as BufferSource
   );
-  // encrypted contains ciphertext + 16-byte auth tag at the end
   const encryptedBytes = new Uint8Array(encrypted);
   const ciphertext = encryptedBytes.slice(0, -16);
   const tag = encryptedBytes.slice(-16);
@@ -46,14 +46,13 @@ export async function decrypt(ciphertext: string): Promise<string> {
   const iv = hexToBytes(ivHex);
   const tag = hexToBytes(tagHex);
   const data = hexToBytes(dataHex);
-  // Web Crypto expects ciphertext + tag concatenated
   const combined = new Uint8Array(data.length + tag.length);
   combined.set(data);
   combined.set(tag, data.length);
   const decrypted = await crypto.subtle.decrypt(
-    { name: ALGORITHM, iv },
+    { name: ALGORITHM, iv: iv as unknown as BufferSource },
     key,
-    combined
+    combined as unknown as BufferSource
   );
   return new TextDecoder().decode(decrypted);
 }
