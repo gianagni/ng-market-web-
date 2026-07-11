@@ -1,3 +1,5 @@
+export const runtime = 'edge'
+
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js'; // Kita pake client standar buat nembus RLS
 import crypto from 'crypto';

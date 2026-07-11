@@ -1,3 +1,5 @@
+export const runtime = 'edge'
+
 import crypto from 'crypto';
 import { createClient } from '@/lib/supabase/server';
 import { normalizePhone } from '@/lib/normalizePhone';
