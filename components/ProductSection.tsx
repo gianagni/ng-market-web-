@@ -291,19 +291,19 @@ export default function ProductSection() {
               <div className="flex border-[4px] border-black mb-6 rounded-none">
                 <button
                   onClick={() => handleModeChange('wa')}
-                  className={`flex-1 py-2.5 font-bold text-sm flex items-center justify-center gap-2 border-r-[4px] border-black transition-colors ${
+                  className={`flex-1 py-2.5 font-bold text-sm flex items-center justify-center gap-2 border-r-[4px] border-black transition-colors min-w-0 ${
                     orderMode === 'wa' ? 'bg-white text-black' : 'bg-white text-black opacity-50 hover:bg-gray-100'
                   }`}
                 >
-                  <i className="fab fa-whatsapp"></i> Order via WhatsApp
+                  <i className="fab fa-whatsapp flex-shrink-0"></i> <span className="truncate">Order via WhatsApp</span>
                 </button>
                 <button
                   onClick={() => handleModeChange('web')}
-                  className={`flex-1 py-2.5 font-bold text-sm flex items-center justify-center gap-2 transition-colors ${
+                  className={`flex-1 py-2.5 font-bold text-sm flex items-center justify-center gap-2 transition-colors min-w-0 ${
                     orderMode === 'web' ? 'bg-[#ffd93d] text-black' : 'bg-[#ffd93d] text-black opacity-50 hover:opacity-100'
                   }`}
                 >
-                  <i className="fas fa-shopping-cart"></i> Beli di Website
+                  <i className="fas fa-shopping-cart flex-shrink-0"></i> <span className="truncate">Beli di Website</span>
                 </button>
               </div>
 
