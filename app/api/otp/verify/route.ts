@@ -1,8 +1,13 @@
 export const runtime = 'edge'
 
-import crypto from 'crypto';
 import { createClient } from '@/lib/supabase/server';
 import { normalizePhone } from '@/lib/normalizePhone';
+
+async function sha256Hex(text: string): Promise<string> {
+  const encoded = new TextEncoder().encode(text);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', encoded);
+  return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
 
 export async function POST(request: Request) {
   try {
@@ -15,9 +20,8 @@ export async function POST(request: Request) {
 
     const { phoneNumber, otp } = await request.json();
     const normalized = normalizePhone(phoneNumber);
-    const otpHash = crypto.createHash('sha256').update(otp).digest('hex');
+    const otpHash = await sha256Hex(otp);
 
-    // Ambil OTP terbaru yang masih aktif untuk nomor ini[cite: 2]
     const { data: record, error: fetchError } = await supabase
       .from('otp_verifications')
       .select('*')
@@ -31,19 +35,15 @@ export async function POST(request: Request) {
       return Response.json({ error: 'Kode tidak ditemukan, silakan kirim ulang' }, { status: 400 });
     }
 
-    // Cek Expired[cite: 2]
     if (new Date(record.expires_at) < new Date()) {
       return Response.json({ error: 'Kode sudah kadaluarsa (lebih dari 5 menit)' }, { status: 400 });
     }
 
-    // Cek limit percobaan salah (maksimal 5x)[cite: 2]
     if (record.attempts >= record.max_attempts) {
       return Response.json({ error: 'Terlalu banyak percobaan salah, silakan kirim ulang kode' }, { status: 400 });
     }
 
-    // Cek kecocokan hash OTP[cite: 2]
     if (record.otp_hash !== otpHash) {
-      // Tambah jumlah attempt kalau salah[cite: 2]
       await supabase
         .from('otp_verifications')
         .update({ attempts: record.attempts + 1 })
@@ -51,7 +51,6 @@ export async function POST(request: Request) {
       return Response.json({ error: 'Kode OTP salah' }, { status: 400 });
     }
 
-    // OTP BENAR! Tandai verified di tabel otp_verifications dan update profile user[cite: 2]
     await supabase.from('otp_verifications').update({ verified: true }).eq('id', record.id);
     await supabase
       .from('profiles')

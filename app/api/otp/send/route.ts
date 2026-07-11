@@ -1,9 +1,14 @@
 export const runtime = 'edge'
 
-import crypto from 'crypto';
 import { createClient } from '@/lib/supabase/server';
 import { normalizePhone } from '@/lib/normalizePhone';
 import { otpRatelimit } from '@/lib/ratelimit';
+
+async function sha256Hex(text: string): Promise<string> {
+  const encoded = new TextEncoder().encode(text);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', encoded);
+  return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
 
 export async function POST(request: Request) {
   try {
@@ -17,17 +22,14 @@ export async function POST(request: Request) {
     const { phoneNumber } = await request.json();
     const normalized = normalizePhone(phoneNumber);
 
-    // Rate limit via Redis (atomic, race-condition safe)
     const { success } = await otpRatelimit.limit(normalized);
     if (!success) {
       return Response.json({ error: 'Terlalu banyak percobaan, coba lagi nanti' }, { status: 429 });
     }
 
-    // Generate 6 digit OTP & Hash pakai SHA-256
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    const otpHash = crypto.createHash('sha256').update(otp).digest('hex');
+    const otpHash = await sha256Hex(otp);
 
-    // Simpan history ke database
     const { error: insertError } = await supabase.from('otp_verifications').insert({
       user_id: user.id,
       phone_number: normalized,
@@ -37,12 +39,9 @@ export async function POST(request: Request) {
 
     if (insertError) throw insertError;
 
-    // Tembak API Fonnte
     const fonnteResponse = await fetch('https://api.fonnte.com/send', {
       method: 'POST',
-      headers: { 
-        Authorization: process.env.FONNTE_API_KEY || '' 
-      },
+      headers: { Authorization: process.env.FONNTE_API_KEY || '' },
       body: new URLSearchParams({
         target: normalized,
         message: `Kode verifikasi NG Market kamu: ${otp}. Berlaku 5 menit. Jangan bagikan ke siapapun.`,

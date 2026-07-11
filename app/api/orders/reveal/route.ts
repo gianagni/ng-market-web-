@@ -46,7 +46,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Kredensial belum diisi admin' }, { status: 404 });
   }
 
-  const plaintext = decrypt(order.akun_detail);
+  const plaintext = await decrypt(order.akun_detail);
 
   const ip = request.headers.get('x-forwarded-for') || 'unknown';
   await supabaseAdmin.from('audit_log').insert({

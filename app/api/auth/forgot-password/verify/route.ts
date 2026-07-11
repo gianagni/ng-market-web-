@@ -2,12 +2,17 @@ export const runtime = 'edge'
 
 import { NextResponse } from 'next/server';
 import { createClient as createAdminClient } from '@supabase/supabase-js';
-import crypto from 'crypto';
 
 const supabaseAdmin = createAdminClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
+
+async function sha256Hex(text: string): Promise<string> {
+  const encoded = new TextEncoder().encode(text);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', encoded);
+  return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
 
 export async function POST(request: Request) {
   try {
@@ -21,7 +26,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Password tidak memenuhi syarat keamanan' }, { status: 400 });
     }
 
-    const otpHash = crypto.createHash('sha256').update(otp).digest('hex');
+    const otpHash = await sha256Hex(otp);
 
     const { data: record, error: fetchError } = await supabaseAdmin
       .from('password_reset_otp')
@@ -52,7 +57,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Kode salah' }, { status: 400 });
     }
 
-    // Kode benar — update password user
     const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(
       record.user_id,
       { password: newPassword }

@@ -56,7 +56,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Order ini tidak terikat ke akun user' }, { status: 400 });
   }
 
-  const encryptedCredential = encrypt(credential.trim());
+  const encryptedCredential = await encrypt(credential.trim());
 
   const { error: updateOrderError } = await supabaseAdmin
     .from('orders')

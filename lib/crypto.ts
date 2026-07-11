@@ -1,25 +1,59 @@
-import crypto from 'crypto';
+const ALGORITHM = 'AES-GCM';
+const KEY_LENGTH = 256;
 
-const ALGORITHM = 'aes-256-gcm';
-const KEY = Buffer.from(process.env.CREDENTIAL_ENCRYPTION_KEY!, 'hex');
-
-export function encrypt(plaintext: string): string {
-  const iv = crypto.randomBytes(12);
-  const cipher = crypto.createCipheriv(ALGORITHM, KEY, iv);
-  const encrypted = Buffer.concat([
-    cipher.update(plaintext, 'utf8'),
-    cipher.final()
-  ]);
-  const tag = cipher.getAuthTag();
-  return `${iv.toString('hex')}:${tag.toString('hex')}:${encrypted.toString('hex')}`;
+function hexToBytes(hex: string): Uint8Array {
+  const bytes = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < hex.length; i += 2) {
+    bytes[i / 2] = parseInt(hex.slice(i, i + 2), 16);
+  }
+  return bytes;
 }
 
-export function decrypt(ciphertext: string): string {
+function bytesToHex(bytes: Uint8Array): string {
+  return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function getKey(): Promise<CryptoKey> {
+  const keyBytes = hexToBytes(process.env.CREDENTIAL_ENCRYPTION_KEY!);
+  return crypto.subtle.importKey(
+    'raw',
+    keyBytes,
+    { name: ALGORITHM, length: KEY_LENGTH },
+    false,
+    ['encrypt', 'decrypt']
+  );
+}
+
+export async function encrypt(plaintext: string): Promise<string> {
+  const key = await getKey();
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const encoded = new TextEncoder().encode(plaintext);
+  const encrypted = await crypto.subtle.encrypt(
+    { name: ALGORITHM, iv },
+    key,
+    encoded
+  );
+  // encrypted contains ciphertext + 16-byte auth tag at the end
+  const encryptedBytes = new Uint8Array(encrypted);
+  const ciphertext = encryptedBytes.slice(0, -16);
+  const tag = encryptedBytes.slice(-16);
+  return `${bytesToHex(iv)}:${bytesToHex(tag)}:${bytesToHex(ciphertext)}`;
+}
+
+export async function decrypt(ciphertext: string): Promise<string> {
   const [ivHex, tagHex, dataHex] = ciphertext.split(':');
-  const iv = Buffer.from(ivHex, 'hex');
-  const tag = Buffer.from(tagHex, 'hex');
-  const data = Buffer.from(dataHex, 'hex');
-  const decipher = crypto.createDecipheriv(ALGORITHM, KEY, iv);
-  decipher.setAuthTag(tag);
-  return decipher.update(data) + decipher.final('utf8');
+  const key = await getKey();
+  const iv = hexToBytes(ivHex);
+  const tag = hexToBytes(tagHex);
+  const data = hexToBytes(dataHex);
+  // Web Crypto expects ciphertext + tag concatenated
+  const combined = new Uint8Array(data.length + tag.length);
+  combined.set(data);
+  combined.set(tag, data.length);
+  const decrypted = await crypto.subtle.decrypt(
+    { name: ALGORITHM, iv },
+    key,
+    combined
+  );
+  return new TextDecoder().decode(decrypted);
 }

@@ -2,7 +2,6 @@ export const runtime = 'edge'
 
 import { NextResponse } from 'next/server';
 import { createClient as createAdminClient } from '@supabase/supabase-js';
-import crypto from 'crypto';
 import { Ratelimit } from '@upstash/ratelimit';
 import { Redis } from '@upstash/redis';
 
@@ -17,6 +16,12 @@ const resetRatelimit = new Ratelimit({
   prefix: 'pwreset',
 });
 
+async function sha256Hex(text: string): Promise<string> {
+  const encoded = new TextEncoder().encode(text);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', encoded);
+  return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
 export async function POST(request: Request) {
   try {
     const ip = request.headers.get('x-forwarded-for') ?? 'unknown';
@@ -30,13 +35,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Email wajib diisi' }, { status: 400 });
     }
 
-    // Cari user berdasarkan email
     const { data: { users }, error: listError } = await supabaseAdmin.auth.admin.listUsers();
     if (listError) throw listError;
 
     const user = users.find(u => u.email?.toLowerCase() === email.toLowerCase());
 
-    // Selalu return sukses meski user nggak ketemu — cegah email enumeration
     if (!user) {
       return NextResponse.json({ success: true });
     }
@@ -54,7 +57,7 @@ export async function POST(request: Request) {
     }
 
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    const otpHash = crypto.createHash('sha256').update(otp).digest('hex');
+    const otpHash = await sha256Hex(otp);
 
     await supabaseAdmin.from('password_reset_otp').insert({
       user_id: user.id,
