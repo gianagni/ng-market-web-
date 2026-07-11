@@ -1,0 +1,19 @@
+@import "tailwindcss";
+
+@keyframes letter-pop {
+  0% { opacity: 0; transform: scale(0) rotate(-180deg); }
+  100% { opacity: 1; transform: scale(1) rotate(0deg); }
+}
+
+@keyframes bar-fill {
+  0% { width: 0%; }
+  100% { width: 100%; }
+}
+
+@utility animate-letter-pop {
+  animation: letter-pop 0.5s cubic-bezier(0.68,-0.55,0.265,1.55) forwards;
+}
+
+@utility animate-bar-fill {
+  animation: bar-fill 0.7s ease-out 0.3s forwards;
+}
