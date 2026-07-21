@@ -1,4 +1,5 @@
 "use client";
+import Link from 'next/link';
 
 const WA_NUMBER = "6282124642320";
 
@@ -12,7 +13,7 @@ export default function Footer() {
 
   return (
     <footer className="bg-black text-white">
-      <div className="max-w-7xl mx-auto px-6 pt-16 pb-10 grid grid-cols-1 md:grid-cols-3 gap-12">
+      <div className="max-w-7xl mx-auto px-6 pt-16 pb-10 grid grid-cols-1 md:grid-cols-4 gap-12">
         <div>
           <div className="font-bold font-mono text-3xl mb-1 tracking-tight">
             NG<span className="text-[#ffd93d]">.</span>
@@ -38,7 +39,6 @@ export default function Footer() {
               { label: "Cloud VPS", id: "sesi-vps" },
               { label: "Cara Order", id: "cara-order" },
               { label: "Testimoni", id: "testimoni" },
-              { label: "FAQ", id: "faq" },
             ].map((item, i) => (
               <li key={i}>
                 <button onClick={() => scrollTo(item.id)} className="hover:text-white transition-colors text-left">
@@ -46,6 +46,20 @@ export default function Footer() {
                 </button>
               </li>
             ))}
+            <li>
+              <Link href="/faq" className="hover:text-white transition-colors">FAQ</Link>
+            </li>
+          </ul>
+        </div>
+
+        <div>
+          <div className="text-[10px] font-mono text-gray-500 uppercase tracking-[0.25em] mb-5 border-b border-gray-800 pb-3">
+            Legal
+          </div>
+          <ul className="flex flex-col gap-2.5 text-sm text-gray-400">
+            <li><Link href="/terms" className="hover:text-white transition-colors">Syarat & Ketentuan</Link></li>
+            <li><Link href="/refund-policy" className="hover:text-white transition-colors">Kebijakan Refund</Link></li>
+            <li><Link href="/contact" className="hover:text-white transition-colors">Kontak Kami</Link></li>
           </ul>
         </div>
 
