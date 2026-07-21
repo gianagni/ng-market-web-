@@ -62,17 +62,20 @@ export async function createPayment(params: CreatePaymentParams): Promise<Create
   };
 
   const bodyStr = JSON.stringify(body);
-  const bodyHash = await sha256Hex(bodyStr);
+  const bodyHash = (await sha256Hex(bodyStr)).toLowerCase();
   const stringToSign = `POST:${va}:${bodyHash}:${apiKey}`;
   const signature = await hmacSha256(apiKey, stringToSign);
+
+  const timestamp = new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14);
 
   const response = await fetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      'Accept': 'application/json',
       va,
       signature,
-      timestamp: new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14),
+      timestamp,
     },
     body: bodyStr,
   });
