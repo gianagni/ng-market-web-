@@ -41,7 +41,7 @@ export default function ContactPage() {
 
           {/* Email */}
           <a
-            href="mailto:ngmarket.id@gmail.com"
+            href="mailto:ngmarkettt@gmail.com"
             className="border-[4px] border-black p-6 shadow-[6px_6px_0px_#000] hover:-translate-y-1 hover:-translate-x-1 hover:shadow-[10px_10px_0px_#000] transition-all bg-white group"
           >
             <div className="flex items-center gap-4 mb-3">
