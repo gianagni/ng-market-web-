@@ -29,8 +29,6 @@ export default function OrderSummaryModal({ isOpen, onClose, items, onCheckoutSu
   const [voucherError, setVoucherError] = useState('');
   const [isValidating, setIsValidating] = useState(false);
   const [isCheckingOut, setIsCheckingOut] = useState(false);
-  const [showWAPopup, setShowWAPopup] = useState(false);
-  const WA_NUMBER = "6282124642320";
 
   const subtotal = items.reduce((sum, i) => sum + i.price, 0);
   const finalPrice = voucherResult ? voucherResult.final_price : subtotal;
@@ -68,19 +66,40 @@ export default function OrderSummaryModal({ isOpen, onClose, items, onCheckoutSu
     setVoucherError('');
   };
 
-  const handleCheckout = () => {
-    setShowWAPopup(true);
-  };
+  const handleCheckout = async () => {
+    const supabase = createClient();
+    const { data: { session } } = await supabase.auth.getSession();
 
-  const handleWARedirect = () => {
-    const itemList = items.map(i => `- ${i.product_name} (${i.package_name}): Rp ${i.price.toLocaleString('id-ID')}`).join('\n');
-    const msg = encodeURIComponent(
-      `Halo, saya mau order:\n\n${itemList}\n\n` +
-      (voucherResult ? `Voucher: ${voucherResult.code}\n` : '') +
-      `Total: Rp ${finalPrice.toLocaleString('id-ID')}\n\nMohon bantuannya, terima kasih!`
-    );
-    window.open(`https://wa.me/${WA_NUMBER}?text=${msg}`, '_blank');
-    setShowWAPopup(false);
+    if (!session) {
+      window.dispatchEvent(new Event('openAuthModal'));
+      return;
+    }
+
+    setIsCheckingOut(true);
+    try {
+      const response = await fetch('/api/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          items,
+          voucher_code: voucherResult?.code ?? null,
+        })
+      });
+
+      const data = await response.json();
+
+      if (data.redirect_url) {
+        onCheckoutSuccess();
+        window.location.assign(data.redirect_url);
+      } else {
+        toast.error("Gagal checkout: " + (data.error || "Unknown error"));
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("Terjadi kesalahan sistem saat menghubungi server!");
+    } finally {
+      setIsCheckingOut(false);
+    }
   };
 
   if (!isOpen) return null;
@@ -201,37 +220,6 @@ export default function OrderSummaryModal({ isOpen, onClose, items, onCheckoutSu
 
         </div>
       </div>
-
-      {/* Popup: Payment belum aktif */}
-      {showWAPopup && (
-        <div className="fixed inset-0 bg-black/70 z-[9999999] flex items-center justify-center p-4">
-          <div className="bg-white border-[4px] border-black shadow-[12px_12px_0px_#000] w-full max-w-sm p-6 flex flex-col gap-4">
-            <div className="flex items-center gap-3">
-              <span className="text-2xl">🚧</span>
-              <h4 className="font-bold text-lg leading-tight">Pembayaran online belum aktif</h4>
-            </div>
-            <p className="text-sm font-medium text-gray-700 leading-relaxed">
-              Sistem pembayaran website sedang dalam proses aktivasi. Untuk sementara, kamu bisa order langsung via WhatsApp lebih cepat dan langsung diproses!
-            </p>
-            <div className="border-[3px] border-black p-3 bg-gray-50 text-sm font-bold">
-              <p className="text-gray-500 text-xs mb-1">Total pesanan:</p>
-              <p className="text-[#ff4757] text-lg font-mono">Rp {finalPrice.toLocaleString('id-ID')}</p>
-            </div>
-            <button
-              onClick={handleWARedirect}
-              className="bg-[#25D366] border-[3px] border-black text-white font-bold py-3 shadow-[4px_4px_0px_#000] hover:translate-y-[2px] hover:translate-x-[2px] hover:shadow-none transition-all flex items-center justify-center gap-2"
-            >
-              <i className="fab fa-whatsapp text-xl"></i> Lanjut Order via WhatsApp
-            </button>
-            <button
-              onClick={() => setShowWAPopup(false)}
-              className="text-sm font-bold text-gray-500 hover:text-black transition-colors underline text-center"
-            >
-              Batal
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

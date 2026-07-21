@@ -1,10 +1,9 @@
-export const runtime = 'edge'
+export const runtime = 'edge';
 
 import { NextResponse } from 'next/server';
 import { createClient } from '../../../lib/supabase/server';
 import { createClient as createAdminClient } from '@supabase/supabase-js';
-// @ts-expect-error - midtrans-client tidak menyediakan types resmi
-import midtransClient from 'midtrans-client';
+import { createPayment } from '../../../lib/payment';
 
 const supabaseAdmin = createAdminClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -20,7 +19,6 @@ function generateOrderCode(): string {
 export async function POST(request: Request) {
   try {
     const supabase = await createClient();
-
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError || !user) {
       return NextResponse.json({ error: 'Sesi habis, silakan login ulang.' }, { status: 401 });
@@ -41,7 +39,6 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-
     const items = body.items ?? [{
       package_id: body.package_id,
       product_name: body.product_name,
@@ -54,14 +51,14 @@ export async function POST(request: Request) {
     }
 
     const originalAmount = items.reduce((sum: number, i: { price: number }) => sum + Number(i.price), 0);
-    
+
     let discountAmount = 0;
     let voucherId = null;
     let voucherCleanCode = '';
 
     if (body.voucher_code) {
       voucherCleanCode = String(body.voucher_code).toUpperCase().trim().replace(/[^A-Z0-9]/g, '');
-      
+
       const { data: voucher } = await supabaseAdmin
         .from('vouchers')
         .select('*')
@@ -69,12 +66,11 @@ export async function POST(request: Request) {
         .eq('is_active', true)
         .single();
 
-      if (voucher && 
-          new Date(voucher.expired_at) > new Date() && 
-          voucher.used_count < voucher.max_uses &&
-          originalAmount >= voucher.min_purchase) {
+      if (voucher &&
+        new Date(voucher.expired_at) > new Date() &&
+        voucher.used_count < voucher.max_uses &&
+        originalAmount >= voucher.min_purchase) {
 
-        // Cek apakah nomor WA ini sudah pernah pakai voucher ini
         const { data: existingUsage } = await supabaseAdmin
           .from('voucher_usage')
           .select('id')
@@ -83,8 +79,8 @@ export async function POST(request: Request) {
           .maybeSingle();
 
         if (existingUsage) {
-          return NextResponse.json({ 
-            error: 'Voucher ini sudah pernah kamu gunakan dengan nomor WhatsApp ini.' 
+          return NextResponse.json({
+            error: 'Voucher ini sudah pernah kamu gunakan dengan nomor WhatsApp ini.'
           }, { status: 400 });
         }
 
@@ -152,7 +148,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Gagal membuat order' }, { status: 500 });
     }
 
-    // Catat pemakaian voucher — dipanggil setelah order berhasil dibuat
     if (voucherId && insertedOrder) {
       await supabaseAdmin.from('voucher_usage').insert({
         voucher_id: voucherId,
@@ -162,53 +157,34 @@ export async function POST(request: Request) {
       });
     }
 
-    const snap = new midtransClient.Snap({
-      isProduction: false,
-      serverKey: process.env.MIDTRANS_SERVER_KEY || '',
-      clientKey: process.env.MIDTRANS_CLIENT_KEY || ''
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://market.gianagni.my.id';
+
+    const payment = await createPayment({
+      orderCode: order_code,
+      amount: grossAmount,
+      buyerName: profile.full_name || 'Customer NG Market',
+      buyerEmail: user.email || 'customer@ngmarket.id',
+      buyerPhone: profile.wa_number,
+      items: items.map((i: { product_name: string; package_name: string; price: number }) => ({
+        name: `${i.product_name} - ${i.package_name}`.substring(0, 48),
+        qty: 1,
+        price: Math.round(Number(i.price)),
+      })),
+      returnUrl: `${siteUrl}/dashboard?order=${order_code}`,
+      cancelUrl: `${siteUrl}/?cancelled=1`,
+      notifyUrl: `${siteUrl}/api/webhook/ipaymu`,
     });
-
-    const midtransItems = items.map((i: { package_id: string; price: number; product_name: string; package_name: string }) => ({
-      id: i.package_id.toString(),
-      price: Math.round(Number(i.price)),
-      quantity: 1,
-      name: `${i.product_name} - ${i.package_name}`.substring(0, 48)
-    }));
-
-    if (discountAmount > 0) {
-      midtransItems.push({
-        id: 'VOUCHER',
-        price: -Math.round(discountAmount),
-        quantity: 1,
-        name: `Diskon Voucher ${voucherCleanCode}`
-      });
-    }
-
-    const parameter = {
-      transaction_details: {
-        order_id: order_code,
-        gross_amount: Math.round(grossAmount)
-      },
-      customer_details: {
-        email: user.email,
-        first_name: profile.full_name || 'Customer NG Market',
-        phone: profile.wa_number
-      },
-      item_details: midtransItems
-    };
-
-    const transaction = await snap.createTransaction(parameter);
 
     return NextResponse.json({
       success: true,
-      token: transaction.token,
-      redirect_url: transaction.redirect_url
+      redirect_url: payment.paymentUrl,
+      session_id: payment.sessionId,
+      order_code,
     });
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Checkout error:', error);
-    const msg = error?.ApiResponse?.error_messages?.[0] || error?.message || 'Kesalahan sistem';
+    const msg = error instanceof Error ? error.message : 'Kesalahan sistem';
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
