@@ -25,6 +25,7 @@ function parseSnapshot(snapshot: string | null): OrderItem[] {
 function statusBadge(status: string) {
   const map: Record<string, { label: string; color: string }> = {
     pending: { label: 'Menunggu Pembayaran', color: 'bg-gray-200 text-gray-700' },
+    awaiting_payment: { label: 'Menunggu Verifikasi', color: 'bg-[#66d9ef] text-black' },
     processing: { label: 'Sedang Diproses', color: 'bg-[#ffd93d] text-black' },
     delivered: { label: 'Selesai', color: 'bg-[#a8e6cf] text-black' },
     cancelled: { label: 'Dibatalkan', color: 'bg-[#ff4757] text-white' },
@@ -35,7 +36,7 @@ function statusBadge(status: string) {
 export default function UserDashboard() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const [resumingOrderId, setResumingOrderId] = useState<string | null>(null);
+  const [resumingOrderCode, setResumingOrderCode] = useState<string | null>(null);
   const [revealingOrderId, setRevealingOrderId] = useState<string | null>(null);
   const [credentialModal, setCredentialModal] = useState<{ orderId: string; credential: string } | null>(null);
   
@@ -94,9 +95,25 @@ export default function UserDashboard() {
         
       if (orderData) setOrders(orderData);
       setIsLoading(false);
+
+      // Auto switch ke tab pesanan kalau dari redirect TemanQRIS
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('order')) {
+        setActiveTab('pesanan');
+      }
     }
     fetchData();
-  }, [router, supabase]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const refreshOrders = async () => {
+    const { data: orderData } = await supabase
+      .from('orders')
+      .select('*')
+      .eq('customer_id', user?.id)
+      .order('created_at', { ascending: false });
+    if (orderData) setOrders(orderData);
+  };
 
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -171,38 +188,38 @@ export default function UserDashboard() {
     }
   };
 
-  const handleResumePayment = async (orderId: string) => {
-    setResumingOrderId(orderId);
+  const handleResumePayment = async (orderCode: string) => {
+    setResumingOrderCode(orderCode);
     try {
-      const res = await fetch('/api/checkout/resume', {
+      const res = await fetch('/api/checkout/resume-temanqris', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ order_id: orderId })
+        body: JSON.stringify({ order_code: orderCode })
       });
 
       const data = await res.json();
 
-      if (!res.ok) {
+      if (!res.ok || !data.redirect_url) {
         toast.error(data.error || 'Gagal melanjutkan pembayaran');
-        setResumingOrderId(null);
+        setResumingOrderCode(null);
         return;
       }
 
       window.location.assign(data.redirect_url);
     } catch {
       toast.error('Terjadi kesalahan sistem');
-      setResumingOrderId(null);
+      setResumingOrderCode(null);
     }
   };
 
   const handleRevealCredential = async (orderId: string) => {
     setRevealingOrderId(orderId);
     try {
-      const res = await fetch(`/api/orders/reveal`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ order_id: orderId })
-    });
+      const res = await fetch('/api/orders/reveal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ order_id: orderId })
+      });
 
       const data = await res.json();
 
@@ -271,7 +288,7 @@ export default function UserDashboard() {
               <i className="fas fa-user-edit mr-2 w-5"></i> Pengaturan
             </button>
             <button 
-              onClick={() => setActiveTab('pesanan')}
+              onClick={() => { setActiveTab('pesanan'); refreshOrders(); }}
               className={`text-left px-4 py-3 font-bold border-[3px] border-black transition-all flex justify-between items-center ${
                 activeTab === 'pesanan' 
                 ? 'bg-[#66d9ef] shadow-[4px_4px_0px_#000] translate-x-[-2px] translate-y-[-2px]' 
@@ -414,7 +431,15 @@ export default function UserDashboard() {
 
           {activeTab === 'pesanan' && (
             <div className="animate-in fade-in slide-in-from-right-4">
-              <h2 className="text-2xl font-bold border-b-[4px] border-black pb-4 mb-6">Riwayat Pesanan</h2>
+              <div className="flex justify-between items-center border-b-[4px] border-black pb-4 mb-6">
+                <h2 className="text-2xl font-bold">Riwayat Pesanan</h2>
+                <button
+                  onClick={refreshOrders}
+                  className="bg-white border-[3px] border-black px-3 py-1.5 font-bold text-sm shadow-[3px_3px_0px_#000] hover:translate-y-[2px] hover:translate-x-[2px] hover:shadow-none transition-all"
+                >
+                  <i className="fas fa-refresh mr-1"></i> Refresh
+                </button>
+              </div>
               {orders.length === 0 ? (
                 <div className="border-[4px] border-dashed border-gray-300 p-10 text-center flex flex-col items-center">
                   <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
@@ -468,15 +493,20 @@ export default function UserDashboard() {
                           </span>
                         </div>
 
-                        {order.status === 'pending' && (
-                          <div className="px-4 pb-4">
+                        {(order.status === 'pending' || order.status === 'awaiting_payment') && (
+                          <div className="px-4 pb-4 flex flex-col gap-2">
+                            {order.status === 'awaiting_payment' && (
+                              <div className="bg-[#66d9ef] border-[2px] border-black px-3 py-2 text-xs font-bold text-center">
+                                <i className="fas fa-clock mr-1"></i> Pembayaran kamu sedang menunggu verifikasi admin
+                              </div>
+                            )}
                             <button
-                              onClick={() => handleResumePayment(order.id)}
-                              disabled={resumingOrderId === order.id}
+                              onClick={() => handleResumePayment(order.order_code)}
+                              disabled={resumingOrderCode === order.order_code}
                               className="w-full bg-[#66d9ef] border-[3px] border-black py-2.5 font-bold text-sm shadow-[3px_3px_0px_#000] hover:translate-y-[2px] hover:translate-x-[2px] hover:shadow-none transition-all disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                             >
                               <i className="fas fa-credit-card"></i>
-                              {resumingOrderId === order.id ? 'Memproses...' : 'Lanjutkan Pembayaran'}
+                              {resumingOrderCode === order.order_code ? 'Memproses...' : 'Lanjutkan Pembayaran'}
                             </button>
                           </div>
                         )}
@@ -503,7 +533,6 @@ export default function UserDashboard() {
         </div>
       </div>
 
-      {/* Modal Kredensial */}
       {credentialModal && (
         <div
           className="fixed inset-0 bg-black/70 z-[999999] flex items-center justify-center p-4"
