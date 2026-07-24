@@ -24,15 +24,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Sesi habis, silakan login ulang.' }, { status: 401 });
     }
 
-    const { data: profile, error: profileError } = await supabase
+    const { data: profile } = await supabase
       .from('profiles')
-      .select('wa_number, full_name, is_wa_verified')
+      .select('wa_number, full_name')
       .eq('id', user.id)
       .single();
-
-    if (profileError) {
-      return NextResponse.json({ error: 'Gagal ambil data profil.' }, { status: 500 });
-    }
 
     if (!profile?.wa_number) {
       return NextResponse.json({ error: 'Nomor WhatsApp belum diisi. Lengkapi profil dulu!' }, { status: 400 });
@@ -54,11 +50,9 @@ export async function POST(request: Request) {
 
     let discountAmount = 0;
     let voucherId = null;
-    let voucherCleanCode = '';
 
     if (body.voucher_code) {
-      voucherCleanCode = String(body.voucher_code).toUpperCase().trim().replace(/[^A-Z0-9]/g, '');
-
+      const voucherCleanCode = String(body.voucher_code).toUpperCase().trim().replace(/[^A-Z0-9]/g, '');
       const { data: voucher } = await supabaseAdmin
         .from('vouchers')
         .select('*')
@@ -78,28 +72,21 @@ export async function POST(request: Request) {
           .eq('wa_number', profile.wa_number)
           .maybeSingle();
 
-        if (existingUsage) {
-          return NextResponse.json({
-            error: 'Voucher ini sudah pernah kamu gunakan dengan nomor WhatsApp ini.'
-          }, { status: 400 });
-        }
-
-        if (voucher.type === 'percent') {
-          discountAmount = Math.floor((originalAmount * voucher.value) / 100);
-          if (voucher.max_discount && discountAmount > voucher.max_discount) {
-            discountAmount = voucher.max_discount;
+        if (!existingUsage) {
+          if (voucher.type === 'percent') {
+            discountAmount = Math.floor((originalAmount * voucher.value) / 100);
+            if (voucher.max_discount && discountAmount > voucher.max_discount) {
+              discountAmount = voucher.max_discount;
+            }
+          } else {
+            discountAmount = Math.min(voucher.value, originalAmount);
           }
-        } else {
-          discountAmount = Math.min(voucher.value, originalAmount);
+          voucherId = voucher.id;
+          await supabaseAdmin
+            .from('vouchers')
+            .update({ used_count: voucher.used_count + 1 })
+            .eq('id', voucher.id);
         }
-
-        voucherId = voucher.id;
-
-        await supabaseAdmin
-          .from('vouchers')
-          .update({ used_count: voucher.used_count + 1 })
-          .eq('id', voucher.id)
-          .eq('used_count', voucher.used_count);
       }
     }
 
@@ -132,19 +119,6 @@ export async function POST(request: Request) {
 
     if (insertError) {
       console.error('Insert order error:', insertError);
-      if (voucherId) {
-        const { data: v } = await supabaseAdmin
-          .from('vouchers')
-          .select('used_count')
-          .eq('id', voucherId)
-          .single();
-        if (v) {
-          await supabaseAdmin
-            .from('vouchers')
-            .update({ used_count: Math.max(0, v.used_count - 1) })
-            .eq('id', voucherId);
-        }
-      }
       return NextResponse.json({ error: 'Gagal membuat order' }, { status: 500 });
     }
 
@@ -158,27 +132,21 @@ export async function POST(request: Request) {
     }
 
     const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://market.gianagni.my.id';
+    const productNames = items.map((i: { product_name: string; package_name: string }) => 
+      `${i.product_name} - ${i.package_name}`).join(', ');
 
     const payment = await createPayment({
       orderCode: order_code,
       amount: grossAmount,
-      buyerName: profile.full_name || 'Customer NG Market',
-      buyerEmail: user.email || 'customer@ngmarket.id',
-      buyerPhone: profile.wa_number,
-      items: items.map((i: { product_name: string; package_name: string; price: number }) => ({
-        name: `${i.product_name} - ${i.package_name}`.substring(0, 48),
-        qty: 1,
-        price: Math.round(Number(i.price)),
-      })),
+      description: productNames.substring(0, 100),
       returnUrl: `${siteUrl}/dashboard?order=${order_code}`,
-      cancelUrl: `${siteUrl}/?cancelled=1`,
-      notifyUrl: `${siteUrl}/api/webhook/ipaymu`,
+      notifyUrl: `${siteUrl}/api/webhook/temanqris`,
     });
 
     return NextResponse.json({
       success: true,
       redirect_url: payment.paymentUrl,
-      session_id: payment.sessionId,
+      link_code: payment.linkCode,
       order_code,
     });
 
